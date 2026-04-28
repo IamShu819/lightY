@@ -15,7 +15,6 @@ static SchedId_t g_WeatherTaskId;
 static SchedId_t g_WindTaskId;
 static SchedId_t g_DistanceTaskId;
 static SchedId_t g_LightAutoTaskId;
-static SchedId_t g_PowerTaskId;
 static SchedId_t g_SensorRetryTaskId;
 
 /* ---------- Task callbacks ---------- */
@@ -46,12 +45,6 @@ static void DistanceTaskEntry(void *arg)
 static void LightAutoTaskEntry(void *arg)
 {
     LightAutoModeHandle();
-}
-
-static void PowerTaskEntry(void *arg)
-{
-    Ina219GetLightData(&g_LightPower.Voltage, &g_LightPower.Elec, &g_LightPower.Pow);
-    Ina219GetCarData(&g_CarPower.Voltage, &g_CarPower.Elec, &g_CarPower.Pow);
 }
 
 static void SensorRetryTaskEntry(void *arg)
@@ -123,8 +116,8 @@ void Init(void)
     WindGetStatus();
     DistanceInit();
 
-    /* I2C sensors */
-    Ina219Init();
+    /* I2C sensors — disabled due to pin conflict with Platform motor (PD10/PD11) */
+    /* Ina219Init(); */
 
     /* UnReport (JSON commands on USART2) */
     UnReportInit();
@@ -150,9 +143,6 @@ void Init(void)
 
     g_LightAutoTaskId = SchedulerCreate(500, 500, LightAutoTaskEntry, NULL);
     SchedulerSetState(g_LightAutoTaskId, SCHED_ENABLE);
-
-    g_PowerTaskId = SchedulerCreate(2000, 2000, PowerTaskEntry, NULL);
-    SchedulerSetState(g_PowerTaskId, SCHED_ENABLE);
 
     g_SensorRetryTaskId = SchedulerCreate(3000, 3000, SensorRetryTaskEntry, NULL);
     SchedulerSetState(g_SensorRetryTaskId, SCHED_ENABLE);
