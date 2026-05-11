@@ -6,9 +6,11 @@
 #include "Ina219.h"
 #include "Light.h"
 #include "MtrDrv.h"
+#include "Uav.h"
 #include "cJSON.h"
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 
 extern TIM_HandleTypeDef htim15;
 extern UART_HandleTypeDef huart2;
@@ -109,8 +111,28 @@ void ReportSensor(void)
         case MtrStateOpening: cJSON_AddStringToObject(sensorNode, "Rolling_State", "OPENING"); break;
         case MtrStateClose:   cJSON_AddStringToObject(sensorNode, "Rolling_State", "CLOSED");  break;
         case MtrStateClosing: cJSON_AddStringToObject(sensorNode, "Rolling_State", "CLOSING"); break;
+        default: break;
     }
     cJSON_AddItemToObject(root, "Sensor", sensorNode);
+
+    /* ---------- Uav ---------- */
+    cJSON *uavNode = cJSON_CreateObject();
+    cJSON_AddNumberToObject(uavNode, "Uav_Accelerated_Speed_X", Jy90AccSpeedPtr->Ax);
+    cJSON_AddNumberToObject(uavNode, "Uav_Accelerated_Speed_Y", Jy90AccSpeedPtr->Ay);
+    cJSON_AddNumberToObject(uavNode, "Uav_Accelerated_Speed_Z", Jy90AccSpeedPtr->Az);
+    cJSON_AddNumberToObject(uavNode, "Uav_Angular_Velocity_X", Jy90AngSpeedPtr->Wx);
+    cJSON_AddNumberToObject(uavNode, "Uav_Angular_Velocity_Y", Jy90AngSpeedPtr->Wy);
+    cJSON_AddNumberToObject(uavNode, "Uav_Angular_Velocity_Z", Jy90AngSpeedPtr->Wz);
+    cJSON_AddNumberToObject(uavNode, "Uav_Angle_Roll", Jy90AnglePtr->Roll);
+    cJSON_AddNumberToObject(uavNode, "Uav_Angle_Pitch", Jy90AnglePtr->Pitch);
+    cJSON_AddNumberToObject(uavNode, "Uav_Angle_Yaw", Jy90AnglePtr->Yaw);
+    cJSON_AddNumberToObject(uavNode, "Uav_Quaternion_Q0", Jy90FourNumPtr->q0);
+    cJSON_AddNumberToObject(uavNode, "Uav_Quaternion_Q1", Jy90FourNumPtr->q1);
+    cJSON_AddNumberToObject(uavNode, "Uav_Quaternion_Q2", Jy90FourNumPtr->q2);
+    cJSON_AddNumberToObject(uavNode, "Uav_Quaternion_Q3", Jy90FourNumPtr->q3);
+    cJSON_AddNumberToObject(uavNode, "Uav_Air_Pressure", Bmp388DataPtr->Press);
+    cJSON_AddNumberToObject(uavNode, "Uav_Elevation", Bmp388DataPtr->High);
+    cJSON_AddItemToObject(root, "Uav", uavNode);
 
     /* ---------- Print & Send ---------- */
     char *reportTxt = cJSON_Print(root);
@@ -121,4 +143,30 @@ void ReportSensor(void)
     }
 
     cJSON_Delete(root);
+}
+
+void SendDataToLubanCat(void)
+{
+    WeatherData_t *weather = WeatherGetData();
+    WindData_t *wind = WindGetData();
+    char jsonBuf[512];
+    char finalBuf[550];
+
+    snprintf(jsonBuf, sizeof(jsonBuf),
+        "{\"Enviroment_Temperation\":%.1f,"
+        "\"Enviroment_Humidity\":%.1f,"
+        "\"Enviroment_Light\":%lu,"
+        "\"Enviroment_Pm10\":%u,"
+        "\"Enviroment_Pm25\":%u,"
+        "\"Wind_Speed\":%.2f,"
+        "\"Wind_Direction\":%.2f,"
+        "\"deviceStatus\":\"online\","
+        "\"deviceName\":\"Light\","
+        "\"deviceType\":\"SensorH7\"}\n",
+        weather->Temp, weather->Humi, weather->Lux,
+        weather->PM10, weather->PM25,
+        wind->Speed, wind->Dir);
+
+    snprintf(finalBuf, sizeof(finalBuf), "JSON:%s", jsonBuf);
+    pSerial(&huart2, finalBuf);
 }

@@ -63,8 +63,8 @@ static void Scl(uint8_t state)
 
 static void I2cReset(void)
 {
-    I2C_GPIO->ODR |= SCL_GPIO_PIN;
-    I2C_GPIO->ODR |= SDA_GPIO_PIN;
+    I2C_SCL_GPIO->ODR |= I2C_SCL_PIN;
+    I2C_SDA_GPIO->ODR |= I2C_SDA_PIN;
 }
 
 static void I2cFreqInit(float freq)

@@ -7,5 +7,6 @@ extern volatile uint8_t g_ReportFlag;
 
 int ReportInit(void);
 void ReportSensor(void);
+void SendDataToLubanCat(void);
 
 #endif

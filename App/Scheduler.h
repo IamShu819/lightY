@@ -31,7 +31,12 @@ SchedId_t SchedulerCreate(uint32_t period, uint32_t delay, void (*entry)(void *a
 int SchedulerDelete(SchedId_t id);
 int SchedulerSetState(SchedId_t id, SchedState_t state);
 int SchedulerSetPeriod(SchedId_t id, uint32_t period);
+int SchedulerSetEntry(SchedId_t id, void (*entry)(void *arg));
+int SchedulerSetArg(SchedId_t id, void *arg);
+int SchedulerExecute(SchedId_t id);
 void SchedulerPoll(void);
+
+__attribute__((weak)) void SysTask(void *arg);
 
 #ifdef __cplusplus
 }

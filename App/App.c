@@ -1,4 +1,6 @@
 #include "App.h"
+#include "EyeTest.h"
+#include "LShell.h"
 
 #define PUSHER_IN1_PORT     GPIOD
 #define PUSHER_IN1_PIN      GPIO_PIN_14
@@ -25,6 +27,7 @@ static void WeatherTaskEntry(void *arg)
         WeatherData_t *w = WeatherGetData();
         printf("[Weather] Temp:%.1fC Humi:%.1f%% PM2.5:%u PM10:%u Lux:%lu\r\n",
                w->Temp, w->Humi, w->PM25, w->PM10, w->Lux);
+        SendDataToLubanCat();
     }
 }
 
@@ -34,6 +37,7 @@ static void WindTaskEntry(void *arg)
     {
         WindData_t *w = WindGetData();
         printf("[Wind] Speed:%.2f m/s Dir:%.2f deg\r\n", w->Speed, w->Dir);
+        SendDataToLubanCat();
     }
 }
 
@@ -52,16 +56,11 @@ static void SensorRetryTaskEntry(void *arg)
     SensorRetryPoll();
 }
 
-/* ---------- SOS button state machine ---------- */
-typedef enum {
-    SosIdle,
-    SosDebouncing,
-    SosLocked
-} SosState_t;
-
-static SosState_t g_SosState = SosIdle;
-static uint32_t g_SosTick = 0;
-
+/* ---------- SOS button state machine ----------
+ * PD1 (SOS) shares port D with Pusher (PD14/PD15) and Platform (PD10/PD11).
+ * Motor GPIO toggles cause voltage glitches on PD1.
+ * Counter-based majority filter (3/5) rejects single-sample noise.
+ */
 static void SosSendEvent(void)
 {
     char buf[64];
@@ -71,36 +70,47 @@ static void SosSendEvent(void)
     printf("SOS sent\r\n");
 }
 
-static void SysTask(void)
+void SysTask(void *arg)
 {
+    static uint8_t sosLocked = 0;
+    static uint8_t sosCounter = 0;
+    static uint32_t sosPressTime = 0;
+
     uint8_t level = (HAL_GPIO_ReadPin(GPIOD, GPIO_PIN_1) == GPIO_PIN_SET) ? 1 : 0;
 
-    switch (g_SosState)
+    /* Majority vote filter: increment on high, decrement on low */
+    if (level)
     {
-        case SosIdle:
-            if (level)
-            {
-                g_SosTick = HAL_GetTick();
-                g_SosState = SosDebouncing;
-            }
-            break;
+        if (sosCounter < 5)
+            sosCounter++;
+    }
+    else
+    {
+        if (sosCounter > 0)
+            sosCounter--;
+    }
 
-        case SosDebouncing:
-            if (!level)
+    /* Trigger only when 3+ of last samples agree on high */
+    if (sosCounter >= 3)
+    {
+        if (!sosLocked)
+        {
+            if (sosPressTime == 0)
             {
-                g_SosState = SosIdle;
+                sosPressTime = HAL_GetTick();
             }
-            else if (HAL_GetTick() - g_SosTick > 30)
+            else if (HAL_GetTick() - sosPressTime > 30)
             {
                 SosSendEvent();
-                g_SosState = SosLocked;
+                sosLocked = 1;
+                sosPressTime = 0;
             }
-            break;
-
-        case SosLocked:
-            if (!level)
-                g_SosState = SosIdle;
-            break;
+        }
+    }
+    else if (sosCounter == 0)
+    {
+        sosLocked = 0;
+        sosPressTime = 0;
     }
 }
 
@@ -116,14 +126,17 @@ void Init(void)
     WindGetStatus();
     DistanceInit();
 
-    /* I2C sensors — disabled due to pin conflict with Platform motor (PD10/PD11) */
-    /* Ina219Init(); */
+    /* I2C sensors (PB0=SDA, PC5=SCL) */
+    Ina219Init();
 
     /* UnReport (JSON commands on USART2) */
     UnReportInit();
 
     /* UAV */
     UavInit();
+
+    /* Shell commands */
+    LShellInit();
 
     /* Light */
     LightInit();
@@ -150,6 +163,9 @@ void Init(void)
     /* Report timer (TIM15) */
     ReportInit();
 
+    /* USART6 eye diagram test (15 Mbps DMA) */
+    EyeTestStart();
+
     /* Pusher / Platform GPIO initial state */
     HAL_GPIO_WritePin(PUSHER_IN1_PORT, PUSHER_IN1_PIN, GPIO_PIN_RESET);
     HAL_GPIO_WritePin(PUSHER_IN2_PORT, PUSHER_IN2_PIN, GPIO_PIN_RESET);
@@ -163,7 +179,7 @@ void Main(void)
 {
     while (1)
     {
-        SysTask();
+        SysTask(NULL);
         SchedulerPoll();
 
         if (g_ReportFlag)
@@ -172,7 +188,11 @@ void Main(void)
             ReportSensor();
         }
 
-        UnReport();
+        if (g_UnReportFlag)
+        {
+            g_UnReportFlag = 0;
+            UnReport();
+        }
     }
 }
 

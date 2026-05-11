@@ -53,6 +53,33 @@ int SchedulerSetPeriod(SchedId_t id, uint32_t period)
     return 0;
 }
 
+int SchedulerSetEntry(SchedId_t id, void (*entry)(void *arg))
+{
+    if (id < 0 || id >= SCHEDULER_MAX_TASKS || !Tasks[id].Active)
+        return -1;
+    Tasks[id].Entry = entry;
+    return 0;
+}
+
+int SchedulerSetArg(SchedId_t id, void *arg)
+{
+    if (id < 0 || id >= SCHEDULER_MAX_TASKS || !Tasks[id].Active)
+        return -1;
+    Tasks[id].Arg = arg;
+    return 0;
+}
+
+int SchedulerExecute(SchedId_t id)
+{
+    if (id < 0 || id >= SCHEDULER_MAX_TASKS || !Tasks[id].Active)
+        return -1;
+    if (Tasks[id].Run != SCHED_ENABLE)
+        return -1;
+    Tasks[id].Entry(Tasks[id].Arg);
+    Tasks[id].Deadline = SCHEDULER_TICK + Tasks[id].Period;
+    return 0;
+}
+
 void SchedulerPoll(void)
 {
     uint32_t now = SCHEDULER_TICK;

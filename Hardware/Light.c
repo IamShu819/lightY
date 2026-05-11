@@ -114,43 +114,8 @@ static int LightLuxToBrightness(uint32_t lux)
     return y;
 }
 
-static uint16_t LightGetMinDistance(void)
+static int LightDistanceToBrightness(float ratio)
 {
-    uint16_t minDis = 3000;
-    for (int i = 0; i < DisCount; i++)
-    {
-        DisDev_t *p = DistanceGetPoint((DisChannel_t)i);
-        if (p && p->Status.State == SensorNormal && p->Status.FailedCount == 0 && p->Data < minDis)
-        {
-            minDis = p->Data;
-        }
-    }
-    return minDis;
-}
-
-static bool LightDetectQuickMove(uint16_t currentDis[4])
-{
-    static uint16_t prevDis[4] = {3000, 3000, 3000, 3000};
-    const float RATE_THRESH = 50.0f;
-    bool detected = false;
-
-    for (int i = 0; i < 4; i++)
-    {
-        DisDev_t *p = DistanceGetPoint((DisChannel_t)i);
-        if (!p || p->Status.State != SensorNormal || p->Status.FailedCount != 0)
-            continue;
-
-        float rate = (float)p->Data - (float)prevDis[i];
-        prevDis[i] = p->Data;
-        if (fabsf(rate) >= RATE_THRESH)
-            detected = true;
-    }
-    return detected;
-}
-
-static int LightDistanceToBrightness(uint16_t disMin)
-{
-    float ratio = 1.0f - (float)disMin / 3000.0f;
     int bright = LIGHT_BRIGHT_MIN + (int)(ratio * (LIGHT_BRIGHT_MAX - LIGHT_BRIGHT_MIN));
     bright = LIGHT_BRIGHT_MIN + (int)((bright - LIGHT_BRIGHT_MIN) * powf(ratio, 0.5f));
 
@@ -178,25 +143,73 @@ void LightAutoModeHandle(void)
     if (lux < LIGHT_OPEN_LUX)
         LightEnable();
 
-    uint16_t currentDis[4];
+    /* Per-sensor baseline state */
+    static uint16_t prevDis[4]        = {3000, 3000, 3000, 3000};
+    static uint16_t BasicDistance[4]   = {0, 0, 0, 0};
+    static uint8_t  BasicDistanceCnt[4] = {0, 0, 0, 0};
+
+    bool quickMovementDetected = false;
+    uint16_t disMin = 3000;
+    int minSensorIdx = -1;
+
     for (int i = 0; i < 4; i++)
     {
         DisDev_t *p = DistanceGetPoint((DisChannel_t)i);
-        currentDis[i] = (p && p->Status.State == SensorNormal && p->Status.FailedCount == 0) ? p->Data : 3000;
+        if (!p || p->Status.State != SensorNormal || p->Status.FailedCount != 0)
+            continue;
+
+        uint16_t cur = p->Data;
+
+        /* Track minimum distance */
+        if (cur < disMin)
+        {
+            disMin = cur;
+            minSensorIdx = i;
+        }
+
+        /* Rate-of-change detection */
+        float rate = (float)cur - (float)prevDis[i];
+        prevDis[i] = cur;
+        if (fabsf(rate) >= 50.0f)
+            quickMovementDetected = true;
+
+        /* Baseline state machine */
+        if (BasicDistanceCnt[i] < 20)
+        {
+            if (cur < 2000)
+                BasicDistanceCnt[i]++;
+            else
+                BasicDistanceCnt[i] = 0;
+
+            if (BasicDistanceCnt[i] >= 20)
+                BasicDistance[i] = cur;
+        }
+        else
+        {
+            /* Baseline established — adapt upward if object moves away */
+            if (cur > BasicDistance[i] + 50)
+                BasicDistance[i] = cur;
+        }
     }
 
-    if (LightDetectQuickMove(currentDis))
+    /* Quick movement → max brightness */
+    if (quickMovementDetected)
     {
         LightSetBright(LIGHT_BRIGHT_MAX);
         return;
     }
 
-    uint16_t disMin = LightGetMinDistance();
-    if (disMin < 2000)
+    /* Proximity-based dimming: object closer than baseline by >100mm */
+    if (minSensorIdx >= 0 && BasicDistanceCnt[minSensorIdx] >= 20
+        && disMin < BasicDistance[minSensorIdx] - 100)
     {
-        LightSetBright(LightDistanceToBrightness(disMin));
+        float ratio = 1.0f - (float)disMin / 3000.0f;
+        if (ratio < 0.0f) ratio = 0.0f;
+        if (ratio > 1.0f) ratio = 1.0f;
+        LightSetBright(LightDistanceToBrightness(ratio));
         return;
     }
 
+    /* Lux-based fallback */
     LightSetBright(LightLuxToBrightness(lux));
 }

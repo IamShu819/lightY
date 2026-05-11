@@ -3,17 +3,18 @@
 
 #include "stm32h7xx_hal.h"
 
-#define I2C_GPIO        GPIOD
-#define SCL_GPIO_PIN    GPIO_PIN_11
-#define SDA_GPIO_PIN    GPIO_PIN_10
+#define I2C_SCL_GPIO    GPIOC
+#define I2C_SCL_PIN     GPIO_PIN_5
+#define I2C_SDA_GPIO    GPIOB
+#define I2C_SDA_PIN     GPIO_PIN_0
 
 void I2cDelay_Us(uint16_t us);
 
-#define SCL_H   {(I2C_GPIO->BSRR = SCL_GPIO_PIN);          I2cDelay_Us(I2cBus->DelayUs);}
-#define SCL_L   {(I2C_GPIO->BSRR = (SCL_GPIO_PIN << 16U)); I2cDelay_Us(I2cBus->DelayUs);}
-#define SDA_H   {(I2C_GPIO->BSRR = SDA_GPIO_PIN);                      }
-#define SDA_L   {(I2C_GPIO->BSRR = (SDA_GPIO_PIN << 16U));             }
-#define SDA_R   ((I2C_GPIO->IDR & SDA_GPIO_PIN) ? 1 : 0)
+#define SCL_H   {(I2C_SCL_GPIO->BSRR = I2C_SCL_PIN);               I2cDelay_Us(I2cBus->DelayUs);}
+#define SCL_L   {(I2C_SCL_GPIO->BSRR = (I2C_SCL_PIN << 16U));      I2cDelay_Us(I2cBus->DelayUs);}
+#define SDA_H   {(I2C_SDA_GPIO->BSRR = I2C_SDA_PIN);                          }
+#define SDA_L   {(I2C_SDA_GPIO->BSRR = (I2C_SDA_PIN << 16U));                 }
+#define SDA_R   ((I2C_SDA_GPIO->IDR & I2C_SDA_PIN) ? 1 : 0)
 
 #define I2C_ACK_TIMEOUT_US  1000
 

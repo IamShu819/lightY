@@ -20,7 +20,8 @@ typedef enum {
     CbRelayCode,
     CbLightModeSwitchCode,
     UavOperationCode,
-    CbReportSetPusherCode
+    CbReportSetPusherCode,
+    CbReportSetPlatformCode
 } UnReportCode_t;
 
 typedef int (*UnReportCb_t)(VariantDef *param, int speakId);
@@ -38,5 +39,7 @@ int UnReportInit(void);
 Queue_t *UnReportGetFIFO(void);
 UnReportCode_t UnReportGetTargetEx(VariantDef *variant, const char *txt);
 int UnReport(void);
+
+extern volatile uint8_t g_UnReportFlag;
 
 #endif

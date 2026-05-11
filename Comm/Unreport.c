@@ -18,7 +18,7 @@ static UnReportTarget_t g_TargetList[] =
 {
     { "SetLightGear",    CbReportSetLightGear,    {0}, CbReportSetLightGearCode,    0, 1 },
     { "SetPusher",       CbReportSetPusher,       {0}, CbReportSetPusherCode,       0, 1 },
-    { "SetPlatform",     CbReportSetPlatform,     {0}, 0,                           0, 1 },
+    { "SetPlatform",     CbReportSetPlatform,     {0}, CbReportSetPlatformCode,     0, 1 },
     { "SetLightSwitch",  CbReportLightSwitch,     {0}, CbReportSetLightSwitchCode,  0, 1 },
     { "FixSensorError",  CbReportFixSensorError,  {0}, CbReportFixSensorErrorCode, 0, 1 },
     { "RollingDoor",     CbReportRollingDoor,     {0}, CbReportRollingDoorCode,     0, 1 },
@@ -66,7 +66,12 @@ Queue_t *UnReportGetFIFO(void)
 
 static bool UnReportTypeValid(cJSON *json)
 {
-    return (cJSON_IsString(json) || json != NULL);
+    return cJSON_IsString(json);
+}
+
+static bool UnReportSpeakIdValid(cJSON *json)
+{
+    return (cJSON_IsString(json) || cJSON_IsNumber(json));
 }
 
 UnReportCode_t UnReportGetTargetEx(VariantDef *variant, const char *txt)
@@ -110,7 +115,7 @@ UnReportCode_t UnReportGetTargetEx(VariantDef *variant, const char *txt)
         cJSON_Delete(msg);
         return UnReportTargetError;
     }
-    if (!UnReportTypeValid(speakid))
+    if (!UnReportSpeakIdValid(speakid))
     {
         ERROR_LOG("%s Get SpeakId Failed", txt);
         cJSON_Delete(msg);
@@ -199,13 +204,16 @@ int UnReport(void)
     return -1;
 }
 
+volatile uint8_t g_UnReportFlag = 0;
+
 void USART2_IRQHandler(void)
 {
     __HAL_UART_CLEAR_OREFLAG(&UNREPORT_UART);
     if (__HAL_UART_GET_IT(&UNREPORT_UART, UART_IT_RXNE))
     {
         __HAL_UART_CLEAR_IT(&UNREPORT_UART, UART_IT_RXNE);
-        uint8_t data = (uint8_t)(UNREPORT_UART.Instance->RDR & 0xFF);
+        uint8_t data;
+        HAL_UART_Receive(&UNREPORT_UART, &data, 1, 0xFFFF);
         if (g_RcvFIFO)
             QueueEnqueue(g_RcvFIFO, data);
     }
@@ -213,7 +221,7 @@ void USART2_IRQHandler(void)
     if (__HAL_UART_GET_FLAG(&UNREPORT_UART, UART_FLAG_IDLE))
     {
         __HAL_UART_CLEAR_IDLEFLAG(&UNREPORT_UART);
-        UnReport();
+        g_UnReportFlag = 1;
     }
 }
 
@@ -223,7 +231,8 @@ void UART4_IRQHandler(void)
     if (__HAL_UART_GET_IT(&huart4, UART_IT_RXNE))
     {
         __HAL_UART_CLEAR_IT(&huart4, UART_IT_RXNE);
-        uint8_t data = (uint8_t)(huart4.Instance->RDR & 0xFF);
+        uint8_t data;
+        HAL_UART_Receive(&huart4, &data, 1, 0xFFFF);
         if (g_RcvFIFO)
             QueueEnqueue(g_RcvFIFO, data);
     }
@@ -231,6 +240,6 @@ void UART4_IRQHandler(void)
     if (__HAL_UART_GET_FLAG(&huart4, UART_FLAG_IDLE))
     {
         __HAL_UART_CLEAR_IDLEFLAG(&huart4);
-        UnReport();
+        g_UnReportFlag = 1;
     }
 }
